@@ -20,7 +20,7 @@ const upload = multer({ dest: 'uploads/' });
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost/artemia-shop', {
     useNewUrlParser: true,
     useUnifiedTopology: true,
-    serverSelectionTimeoutMS: 10000 // Thời gian chờ kết nối 10 giây
+    serverSelectionTimeoutMS: 10000
 }).then(() => console.log('MongoDB connected successfully'))
   .catch(err => console.error('MongoDB connection error:', err.message));
 
@@ -53,16 +53,6 @@ const Subpage = mongoose.model('Subpage', subpageSchema);
 const User = mongoose.model('User', userSchema);
 const Order = mongoose.model('Order', orderSchema);
 const Theme = mongoose.model('Theme', themeSchema);
-
-// Middleware xác thực cho trang admin
-app.use('/admin', (req, res, next) => {
-    const auth = req.headers['authorization'];
-    if (!auth || auth !== 'Basic YWRtaW46cGFzc3dvcmQ=') { // Base64 của "admin:password"
-        res.status(401).json({ error: 'Unauthorized. Use Basic Auth with username: admin, password: password' });
-        return;
-    }
-    next();
-});
 
 // API endpoints
 app.get('/api/products', async (req, res) => {
@@ -230,7 +220,6 @@ app.get('/api/track/:orderCode', async (req, res) => {
     }
 });
 
-// Thêm endpoint đăng nhập
 app.post('/api/login', async (req, res) => {
     try {
         const { username, password } = req.body;
