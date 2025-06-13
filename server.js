@@ -230,6 +230,19 @@ app.get('/api/track/:orderCode', async (req, res) => {
     }
 });
 
+// Thêm endpoint đăng nhập
+app.post('/api/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        if (!username || !password) return res.status(400).json({ error: 'Missing username or password' });
+        const user = await User.findOne({ username, password });
+        if (!user) return res.status(401).json({ error: 'Invalid username or password' });
+        res.status(200).json({ message: 'Login successful', user });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to login', details: err.message });
+    }
+});
+
 // Định tuyến riêng cho admin
 app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));

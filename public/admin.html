@@ -51,6 +51,10 @@
 <body class="bg-gray-100 font-sans">
     <header class="bg-blue-600 text-white p-4">
         <h1 class="text-2xl font-bold">Quản lý Admin</h1>
+        <nav class="mt-2">
+            <a href="#" onclick="openPopup('login')" class="px-2 text-white">Đăng nhập</a>
+            <a href="#" onclick="openPopup('register')" class="px-2 text-white">Đăng ký</a>
+        </nav>
     </header>
 
     <main class="container mx-auto p-4">
@@ -95,6 +99,53 @@
             <div id="user-list"></div>
         </section>
     </main>
+
+    <!-- Pop-up Đăng ký/Đăng nhập -->
+    <div id="authPopup" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+            <div class="flex justify-between items-center mb-4">
+                <ul class="flex space-x-4">
+                    <li><a href="#" onclick="showTab('login')" class="tab-link {{active_tab == 'login' ? 'border-b-2 border-blue-600' : ''}} px-4 py-2">Đăng nhập</a></li>
+                    <li><a href="#" onclick="showTab('register')" class="tab-link {{active_tab == 'register' ? 'border-b-2 border-blue-600' : ''}} px-4 py-2">Đăng ký</a></li>
+                </ul>
+                <button onclick="closePopup()" class="text-gray-500 hover:text-gray-700">&times;</button>
+            </div>
+
+            <!-- Form Đăng nhập -->
+            <div id="loginTab" class="auth-tab">
+                <form id="login-form">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Tên đăng nhập</label>
+                        <input type="text" id="login-username" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" placeholder="Nhập tên đăng nhập">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Mật khẩu</label>
+                        <input type="password" id="login-password" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" placeholder="Nhập mật khẩu">
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700">Đăng nhập</button>
+                </form>
+            </div>
+
+            <!-- Form Đăng ký -->
+            <div id="registerTab" class="auth-tab hidden">
+                <form id="register-form">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Tên đăng nhập</label>
+                        <input type="text" id="reg-username" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" placeholder="Nhập tên đăng nhập">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Mật khẩu</label>
+                        <input type="password" id="reg-password" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" placeholder="Nhập mật khẩu">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Số điện thoại</label>
+                        <input type="text" id="reg-phone" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" placeholder="Nhập số điện thoại">
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700">Đăng ký</button>
+                </form>
+            </div>
+        </div>
+    </div>
 
     <script>
         // Quản lý giao diện
@@ -227,6 +278,51 @@
                 loadUsers();
             }
         }
+
+        // Pop-up control
+        function openPopup(type) {
+            document.getElementById('authPopup').classList.remove('hidden');
+            showTab(type);
+        }
+
+        function closePopup() {
+            document.getElementById('authPopup').classList.add('hidden');
+        }
+
+        function showTab(type) {
+            document.querySelectorAll('.auth-tab').forEach(tab => tab.classList.add('hidden'));
+            document.getElementById(`${type}Tab`).classList.remove('hidden');
+            document.querySelectorAll('.tab-link').forEach(link => link.classList.remove('border-b-2', 'border-blue-600'));
+            document.querySelector(`.tab-link[onclick="showTab('${type}')"]`).classList.add('border-b-2', 'border-blue-600');
+        }
+
+        // Form submission
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            try {
+                const res = await axios.post('/api/login', { username, password });
+                alert('Đăng nhập thành công!');
+                closePopup();
+            } catch (err) {
+                alert('Lỗi khi đăng nhập: ' + err.response?.data?.error || 'Kiểm tra lại thông tin');
+            }
+        });
+
+        document.getElementById('register-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('reg-username').value;
+            const password = document.getElementById('reg-password').value;
+            const phone = document.getElementById('reg-phone').value;
+            try {
+                await axios.post('/api/users', { username, password, phone });
+                alert('Đăng ký thành công!');
+                closePopup();
+            } catch (err) {
+                alert('Lỗi khi đăng ký: ' + err.response?.data?.error || 'Kiểm tra lại thông tin');
+            }
+        });
 
         // Load dữ liệu khi vào trang
         loadSubpages();
