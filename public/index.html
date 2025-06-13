@@ -1,0 +1,195 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Artemia & Men Vi Sinh</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+    <header class="bg-blue-600 text-white p-4">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 id="site-title" class="text-2xl font-bold">Artemia & Men Vi Sinh</h1>
+            <nav>
+                <a href="/" class="px-2">Trang chủ</a>
+                <a href="/artemia" class="px-2">Artemia</a>
+                <a href="/men-vi-sinh" class="px-2">Men vi sinh</a>
+                <a href="#cart" class="px-2">Giỏ hàng</a>
+                <a href="#login" class="px-2">Đăng nhập</a>
+                <a href="#register" class="px-2">Đăng ký</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container mx-auto p-4">
+        <section id="products" class="grid grid-cols-1 md:grid-cols-3 gap-4"></section>
+
+        <section id="cart" class="mt-8">
+            <h2 class="text-xl font-bold">Giỏ hàng</h2>
+            <div id="cart-items"></div>
+            <button onclick="placeOrder()" class="bg-blue-600 text-white p-2 mt-4">Đặt hàng</button>
+            <div id="order-tracking" class="mt-4">
+                <input type="text" id="tracking-code" placeholder="Nhập mã vận đơn" class="border p-2">
+                <button onclick="trackOrder()" class="bg-blue-600 text-white p-2">Tra cứu</button>
+                <div id="tracking-result"></div>
+            </div>
+        </section>
+
+        <section id="login" class="mt-8">
+            <h2 class="text-xl font-bold">Đăng nhập</h2>
+            <div id="login-form">
+                <input type="text" id="login-username" placeholder="Tên đăng nhập" class="border p-2 mb-2 w-full">
+                <input type="password" id="login-password" placeholder="Mật khẩu" class="border p-2 mb-2 w-full">
+                <button onclick="login()" class="bg-blue-600 text-white p-2">Đăng nhập</button>
+            </div>
+        </section>
+
+        <section id="register" class="mt-8">
+            <h2 class="text-xl font-bold">Đăng ký</h2>
+            <div id="register-form">
+                <input type="text" id="reg-username" placeholder="Tên đăng nhập" class="border p-2 mb-2 w-full">
+                <input type="password" id="reg-password" placeholder="Mật khẩu" class="border p-2 mb-2 w-full">
+                <input type="text" id="reg-phone" placeholder="Số điện thoại" class="border p-2 mb-2 w-full">
+                <button onclick="register()" class="bg-blue-600 text-white p-2">Đăng ký</button>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        let cart = [];
+
+        // Cập nhật giao diện
+        async function loadTheme() {
+            const res = await axios.get('/api/theme');
+            if (res.data) {
+                document.documentElement.style.setProperty('--primary-color', res.data.color || '#2563eb');
+                document.getElementById('site-title').textContent = res.data.name || 'Artemia & Men Vi Sinh';
+            }
+        }
+
+        // Render sản phẩm
+        const ProductList = () => {
+            const [products, setProducts] = React.useState([]);
+            React.useEffect(() => {
+                axios.get('/api/products').then(res => setProducts(res.data));
+            }, []);
+            return (
+                <div>
+                    {products.map(product => (
+                        <div key={product._id} class="border p-4">
+                            <img src={product.image} alt={product.name} class="w-full h-48 object-cover"/>
+                            <h3>{product.name}</h3>
+                            <p>{product.price} VND</p>
+                            <button onClick={() => addToCart(product)} class="bg-blue-600 text-white p-2">Thêm vào giỏ</button>
+                        </div>
+                    ))}
+                </div>
+            );
+        };
+
+        ReactDOM.render(<ProductList />, document.getElementById('products'));
+
+        // Giỏ hàng
+        function addToCart(product) {
+            cart.push(product);
+            updateCart();
+        }
+
+        function updateCart() {
+            document.getElementById('cart-items').innerHTML = cart.map(item => `
+                <div>${item.name} - ${item.price} VND</div>
+            `).join('');
+        }
+
+        async function placeOrder() {
+            if (cart.length === 0) return alert('Giỏ hàng trống!');
+            const order = { products: cart, status: 'Pending', orderCode: `ORDER${Date.now()}` };
+            await axios.post('/api/orders', order);
+            alert('Đặt hàng thành công!');
+            cart = [];
+            updateCart();
+        }
+
+        // Tra cứu đơn hàng GHN
+        async function trackOrder() {
+            const code = document.getElementById('tracking-code').value;
+            try {
+                const res = await axios.get(`/api/track/${code}`);
+                document.getElementById('tracking-result').innerHTML = JSON.stringify(res.data, null, 2);
+            } catch (err) {
+                document.getElementById('tracking-result').innerHTML = 'Lỗi khi tra cứu đơn hàng';
+            }
+        }
+
+        // Đăng ký
+        async function register() {
+            const username = document.getElementById('reg-username').value;
+            const password = document.getElementById('reg-password').value;
+            const phone = document.getElementById('reg-phone').value;
+            try {
+                await axios.post('/api/users', { username, password, phone });
+                alert('Đăng ký thành công!');
+            } catch (err) {
+                alert('Lỗi khi đăng ký');
+            }
+        }
+
+        // Đăng nhập
+        async function login() {
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            try {
+                const res = await axios.post('/api/login', { username, password });
+                alert('Đăng nhập thành công!');
+            } catch (err) {
+                alert('Lỗi khi đăng nhập');
+            }
+        }
+
+        // Load giao diện khi khởi động
+        loadTheme();
+    </script>
+</body>
+</html>
