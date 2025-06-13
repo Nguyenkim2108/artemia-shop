@@ -16,25 +16,40 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const upload = multer({ dest: 'uploads/' });
 
-// Kết nối MongoDB
+// Kết nối MongoDB với timeout và retry
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost/artemia-shop', {
     useNewUrlParser: true,
     useUnifiedTopology: true,
-    serverSelectionTimeoutMS: 5000 // Thời gian chờ kết nối
-}).then(() => console.log('MongoDB connected'))
-  .catch(err => console.error('MongoDB connection error:', err));
+    serverSelectionTimeoutMS: 10000, // Tăng thời gian chờ lên 10 giây
+    autoReconnect: true, // Tự động kết nối lại
+    reconnectTries: Number.MAX_VALUE, // Số lần thử lại tối đa
+    reconnectInterval: 1000 // Khoảng thời gian giữa các lần thử lại (1 giây)
+}).then(() => console.log('MongoDB connected successfully'))
+  .catch(err => console.error('MongoDB connection error:', err.message));
 
 // Schema
 const productSchema = new mongoose.Schema({
-    name: String,
-    price: Number,
-    category: String,
+    name: { type: String, required: true },
+    price: { type: Number, required: true },
+    category: { type: String, required: true },
     image: String
 });
-const subpageSchema = new mongoose.Schema({ name: String });
-const userSchema = new mongoose.Schema({ username: String, password: String, phone: String });
-const orderSchema = new mongoose.Schema({ products: Array, status: String, orderCode: String });
-const themeSchema = new mongoose.Schema({ color: String, name: String, logo: String });
+const subpageSchema = new mongoose.Schema({ name: { type: String, required: true } });
+const userSchema = new mongoose.Schema({
+    username: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    phone: String
+});
+const orderSchema = new mongoose.Schema({
+    products: [Object],
+    status: { type: String, default: 'Pending' },
+    orderCode: { type: String, required: true, unique: true }
+});
+const themeSchema = new mongoose.Schema({
+    color: String,
+    name: String,
+    logo: String
+});
 
 const Product = mongoose.model('Product', productSchema);
 const Subpage = mongoose.model('Subpage', subpageSchema);
@@ -42,11 +57,11 @@ const User = mongoose.model('User', userSchema);
 const Order = mongoose.model('Order', orderSchema);
 const Theme = mongoose.model('Theme', themeSchema);
 
-// Middleware xác thực cho trang admin (tùy chọn)
+// Middleware xác thực cho trang admin
 app.use('/admin', (req, res, next) => {
     const auth = req.headers['authorization'];
     if (!auth || auth !== 'Basic YWRtaW46cGFzc3dvcmQ=') { // Base64 của "admin:password"
-        res.status(401).send('Unauthorized. Use Basic Auth with username: admin, password: password');
+        res.status(401).json({ error: 'Unauthorized. Use Basic Auth with username: admin, password: password' });
         return;
     }
     next();
@@ -58,75 +73,89 @@ app.get('/api/products', async (req, res) => {
         const products = await Product.find();
         res.json(products);
     } catch (err) {
-        res.status(500).json({ error: 'Failed to fetch products' });
+        res.status(500).json({ error: 'Failed to fetch products', details: err.message });
     }
 });
 
 app.post('/api/products', upload.single('image'), async (req, res) => {
     try {
-        const { name, price, category, url } = req.body;
+        const { name, price, category } = req.body;
+        if (!name || !price || !category) {
+            return res.status(400).json({ error: 'Missing required fields (name, price, category)' });
+        }
         let image = req.file ? `/uploads/${req.file.filename}` : '';
-        if (url) {
-            const response = await axios.get(url, { responseType: 'arraybuffer' });
+        if (req.body.url) {
+            const response = await axios.get(req.body.url, { responseType: 'arraybuffer' });
             image = `data:image/jpeg;base64,${Buffer.from(response.data).toString('base64')}`;
         }
         const product = new Product({ name, price, category, image });
         await product.save();
-        res.json(product);
+        res.status(201).json(product);
     } catch (err) {
-        res.status(500).json({ error: 'Failed to add product' });
+        res.status(500).json({ error: 'Failed to add product', details: err.message });
     }
 });
 
 app.put('/api/products/:id', upload.single('image'), async (req, res) => {
     try {
-        const { name, price, category, url } = req.body;
+        const { name, price, category } = req.body;
+        if (!name || !price || !category) {
+            return res.status(400).json({ error: 'Missing required fields (name, price, category)' });
+        }
         let image = req.file ? `/uploads/${req.file.filename}` : '';
-        if (url) {
-            const response = await axios.get(url, { responseType: 'arraybuffer' });
+        if (req.body.url) {
+            const response = await axios.get(req.body.url, { responseType: 'arraybuffer' });
             image = `data:image/jpeg;base64,${Buffer.from(response.data).toString('base64')}`;
         }
-        const product = await Product.findByIdAndUpdate(req.params.id, { name, price, category, image }, { new: true });
+        const product = await Product.findByIdAndUpdate(req.params.id, { name, price, category, image }, { new: true, runValidators: true });
+        if (!product) return res.status(404).json({ error: 'Product not found' });
         res.json(product);
     } catch (err) {
-        res.status(500).json({ error: 'Failed to update product' });
+        res.status(500).json({ error: 'Failed to update product', details: err.message });
     }
 });
 
 app.delete('/api/products/:id', async (req, res) => {
     try {
-        await Product.findByIdAndDelete(req.params.id);
+        const product = await Product.findByIdAndDelete(req.params.id);
+        if (!product) return res.status(404).json({ error: 'Product not found' });
         res.json({ message: 'Product deleted' });
     } catch (err) {
-        res.status(500).json({ error: 'Failed to delete product' });
+        res.status(500).json({ error: 'Failed to delete product', details: err.message });
     }
 });
 
 app.post('/api/subpages', async (req, res) => {
     try {
-        const subpage = new Subpage(req.body);
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ error: 'Missing required field (name)' });
+        const subpage = new Subpage({ name });
         await subpage.save();
-        res.json(subpage);
+        res.status(201).json(subpage);
     } catch (err) {
-        res.status(500).json({ error: 'Failed to add subpage' });
+        res.status(500).json({ error: 'Failed to add subpage', details: err.message });
     }
 });
 
 app.put('/api/subpages/:id', async (req, res) => {
     try {
-        const subpage = await Subpage.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ error: 'Missing required field (name)' });
+        const subpage = await Subpage.findByIdAndUpdate(req.params.id, { name }, { new: true, runValidators: true });
+        if (!subpage) return res.status(404).json({ error: 'Subpage not found' });
         res.json(subpage);
     } catch (err) {
-        res.status(500).json({ error: 'Failed to update subpage' });
+        res.status(500).json({ error: 'Failed to update subpage', details: err.message });
     }
 });
 
 app.delete('/api/subpages/:id', async (req, res) => {
     try {
-        await Subpage.findByIdAndDelete(req.params.id);
+        const subpage = await Subpage.findByIdAndDelete(req.params.id);
+        if (!subpage) return res.status(404).json({ error: 'Subpage not found' });
         res.json({ message: 'Subpage deleted' });
     } catch (err) {
-        res.status(500).json({ error: 'Failed to delete subpage' });
+        res.status(500).json({ error: 'Failed to delete subpage', details: err.message });
     }
 });
 
@@ -134,38 +163,41 @@ app.post('/api/theme', upload.single('logo'), async (req, res) => {
     try {
         const { color, name } = req.body;
         let logo = req.file ? `/uploads/${req.file.filename}` : '';
-        const theme = await Theme.findOneAndUpdate({}, { color, name, logo }, { upsert: true, new: true });
+        const theme = await Theme.findOneAndUpdate({}, { color, name, logo }, { upsert: true, new: true, runValidators: true });
         res.json(theme);
     } catch (err) {
-        res.status(500).json({ error: 'Failed to update theme' });
+        res.status(500).json({ error: 'Failed to update theme', details: err.message });
     }
 });
 
 app.get('/api/theme', async (req, res) => {
     try {
         const theme = await Theme.findOne();
-        res.json(theme);
+        res.json(theme || {});
     } catch (err) {
-        res.status(500).json({ error: 'Failed to fetch theme' });
+        res.status(500).json({ error: 'Failed to fetch theme', details: err.message });
     }
 });
 
 app.post('/api/users', async (req, res) => {
     try {
-        const user = new User(req.body);
+        const { username, password } = req.body;
+        if (!username || !password) return res.status(400).json({ error: 'Missing required fields (username, password)' });
+        const user = new User({ username, password, phone: req.body.phone });
         await user.save();
-        res.json(user);
+        res.status(201).json(user);
     } catch (err) {
-        res.status(500).json({ error: 'Failed to add user' });
+        res.status(500).json({ error: 'Failed to add user', details: err.message });
     }
 });
 
 app.delete('/api/users/:id', async (req, res) => {
     try {
-        await User.findByIdAndDelete(req.params.id);
+        const user = await User.findByIdAndDelete(req.params.id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
         res.json({ message: 'User deleted' });
     } catch (err) {
-        res.status(500).json({ error: 'Failed to delete user' });
+        res.status(500).json({ error: 'Failed to delete user', details: err.message });
     }
 });
 
@@ -174,17 +206,19 @@ app.get('/api/orders', async (req, res) => {
         const orders = await Order.find();
         res.json(orders);
     } catch (err) {
-        res.status(500).json({ error: 'Failed to fetch orders' });
+        res.status(500).json({ error: 'Failed to fetch orders', details: err.message });
     }
 });
 
 app.post('/api/orders', async (req, res) => {
     try {
-        const order = new Order(req.body);
+        const { products, orderCode } = req.body;
+        if (!products || !orderCode) return res.status(400).json({ error: 'Missing required fields (products, orderCode)' });
+        const order = new Order({ products, orderCode });
         await order.save();
-        res.json(order);
+        res.status(201).json(order);
     } catch (err) {
-        res.status(500).json({ error: 'Failed to add order' });
+        res.status(500).json({ error: 'Failed to add order', details: err.message });
     }
 });
 
@@ -195,7 +229,7 @@ app.get('/api/track/:orderCode', async (req, res) => {
         });
         res.json(response.data);
     } catch (err) {
-        res.status(500).json({ error: 'Error tracking order' });
+        res.status(500).json({ error: 'Error tracking order', details: err.message });
     }
 });
 
@@ -212,7 +246,7 @@ app.get('*', (req, res) => {
 // Xử lý lỗi chung
 app.use((err, req, res, next) => {
     console.error(err.stack);
-    res.status(500).send('Something broke!');
+    res.status(500).json({ error: 'Internal server error', details: err.message });
 });
 
 // Khởi động server
