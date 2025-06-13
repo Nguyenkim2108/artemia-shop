@@ -16,14 +16,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const upload = multer({ dest: 'uploads/' });
 
-// Kết nối MongoDB với timeout và retry
+// Kết nối MongoDB
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost/artemia-shop', {
     useNewUrlParser: true,
     useUnifiedTopology: true,
-    serverSelectionTimeoutMS: 10000, // Tăng thời gian chờ lên 10 giây
-    autoReconnect: true, // Tự động kết nối lại
-    reconnectTries: Number.MAX_VALUE, // Số lần thử lại tối đa
-    reconnectInterval: 1000 // Khoảng thời gian giữa các lần thử lại (1 giây)
+    serverSelectionTimeoutMS: 10000 // Thời gian chờ kết nối 10 giây
 }).then(() => console.log('MongoDB connected successfully'))
   .catch(err => console.error('MongoDB connection error:', err.message));
 
