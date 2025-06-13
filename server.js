@@ -19,7 +19,8 @@ const upload = multer({ dest: 'uploads/' });
 // Kết nối MongoDB
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost/artemia-shop', {
     useNewUrlParser: true,
-    useUnifiedTopology: true
+    useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 5000 // Thời gian chờ kết nối
 }).then(() => console.log('MongoDB connected'))
   .catch(err => console.error('MongoDB connection error:', err));
 
@@ -41,88 +42,150 @@ const User = mongoose.model('User', userSchema);
 const Order = mongoose.model('Order', orderSchema);
 const Theme = mongoose.model('Theme', themeSchema);
 
+// Middleware xác thực cho trang admin (tùy chọn)
+app.use('/admin', (req, res, next) => {
+    const auth = req.headers['authorization'];
+    if (!auth || auth !== 'Basic YWRtaW46cGFzc3dvcmQ=') { // Base64 của "admin:password"
+        res.status(401).send('Unauthorized. Use Basic Auth with username: admin, password: password');
+        return;
+    }
+    next();
+});
+
 // API endpoints
 app.get('/api/products', async (req, res) => {
-    const products = await Product.find();
-    res.json(products);
+    try {
+        const products = await Product.find();
+        res.json(products);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch products' });
+    }
 });
 
 app.post('/api/products', upload.single('image'), async (req, res) => {
-    const { name, price, category, url } = req.body;
-    let image = req.file ? `/uploads/${req.file.filename}` : '';
-    if (url) {
-        const response = await axios.get(url, { responseType: 'arraybuffer' });
-        image = `data:image/jpeg;base64,${Buffer.from(response.data).toString('base64')}`;
+    try {
+        const { name, price, category, url } = req.body;
+        let image = req.file ? `/uploads/${req.file.filename}` : '';
+        if (url) {
+            const response = await axios.get(url, { responseType: 'arraybuffer' });
+            image = `data:image/jpeg;base64,${Buffer.from(response.data).toString('base64')}`;
+        }
+        const product = new Product({ name, price, category, image });
+        await product.save();
+        res.json(product);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to add product' });
     }
-    const product = new Product({ name, price, category, image });
-    await product.save();
-    res.json(product);
 });
 
 app.put('/api/products/:id', upload.single('image'), async (req, res) => {
-    const { name, price, category, url } = req.body;
-    let image = req.file ? `/uploads/${req.file.filename}` : '';
-    if (url) {
-        const response = await axios.get(url, { responseType: 'arraybuffer' });
-        image = `data:image/jpeg;base64,${Buffer.from(response.data).toString('base64')}`;
+    try {
+        const { name, price, category, url } = req.body;
+        let image = req.file ? `/uploads/${req.file.filename}` : '';
+        if (url) {
+            const response = await axios.get(url, { responseType: 'arraybuffer' });
+            image = `data:image/jpeg;base64,${Buffer.from(response.data).toString('base64')}`;
+        }
+        const product = await Product.findByIdAndUpdate(req.params.id, { name, price, category, image }, { new: true });
+        res.json(product);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update product' });
     }
-    const product = await Product.findByIdAndUpdate(req.params.id, { name, price, category, image }, { new: true });
-    res.json(product);
 });
 
 app.delete('/api/products/:id', async (req, res) => {
-    await Product.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Product deleted' });
+    try {
+        await Product.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Product deleted' });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to delete product' });
+    }
 });
 
 app.post('/api/subpages', async (req, res) => {
-    const subpage = new Subpage(req.body);
-    await subpage.save();
-    res.json(subpage);
+    try {
+        const subpage = new Subpage(req.body);
+        await subpage.save();
+        res.json(subpage);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to add subpage' });
+    }
 });
 
 app.put('/api/subpages/:id', async (req, res) => {
-    const subpage = await Subpage.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    res.json(subpage);
+    try {
+        const subpage = await Subpage.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        res.json(subpage);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update subpage' });
+    }
 });
 
 app.delete('/api/subpages/:id', async (req, res) => {
-    await Subpage.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Subpage deleted' });
+    try {
+        await Subpage.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Subpage deleted' });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to delete subpage' });
+    }
 });
 
 app.post('/api/theme', upload.single('logo'), async (req, res) => {
-    const { color, name } = req.body;
-    let logo = req.file ? `/uploads/${req.file.filename}` : '';
-    const theme = await Theme.findOneAndUpdate({}, { color, name, logo }, { upsert: true, new: true });
-    res.json(theme);
+    try {
+        const { color, name } = req.body;
+        let logo = req.file ? `/uploads/${req.file.filename}` : '';
+        const theme = await Theme.findOneAndUpdate({}, { color, name, logo }, { upsert: true, new: true });
+        res.json(theme);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update theme' });
+    }
 });
 
 app.get('/api/theme', async (req, res) => {
-    const theme = await Theme.findOne();
-    res.json(theme);
+    try {
+        const theme = await Theme.findOne();
+        res.json(theme);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch theme' });
+    }
 });
 
 app.post('/api/users', async (req, res) => {
-    const user = new User(req.body);
-    await user.save();
-    res.json(user);
+    try {
+        const user = new User(req.body);
+        await user.save();
+        res.json(user);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to add user' });
+    }
 });
 
 app.delete('/api/users/:id', async (req, res) => {
-    await User.findByIdAndDelete(req.params.id);
-    res.json({ message: 'User deleted' });
+    try {
+        await User.findByIdAndDelete(req.params.id);
+        res.json({ message: 'User deleted' });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to delete user' });
+    }
 });
 
 app.get('/api/orders', async (req, res) => {
-    const orders = await Order.find();
-    res.json(orders);
+    try {
+        const orders = await Order.find();
+        res.json(orders);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch orders' });
+    }
 });
 
 app.post('/api/orders', async (req, res) => {
-    const order = new Order(req.body);
-    await order.save();
-    res.json(order);
+    try {
+        const order = new Order(req.body);
+        await order.save();
+        res.json(order);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to add order' });
+    }
 });
 
 app.get('/api/track/:orderCode', async (req, res) => {
@@ -136,9 +199,20 @@ app.get('/api/track/:orderCode', async (req, res) => {
     }
 });
 
-// Phục vụ frontend
+// Định tuyến riêng cho admin
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// Định tuyến mặc định
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Xử lý lỗi chung
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).send('Something broke!');
 });
 
 // Khởi động server
